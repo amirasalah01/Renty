@@ -1,44 +1,47 @@
+from django.db import models
 from rest_framework import generics, permissions, status, filters
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
-from .models import Property
-from .serializers import PropertySerializer
+from .models import Property, Review
+from .serializers import PropertySerializer, ReviewSerializer, ReviewCreateSerializer
 from .filters import PropertyFilter
+
 
 class PropertyListCreateView(generics.ListCreateAPIView):
     """
-    List all properties
-    Create new property (authenticated)
+    List all properties or create a new one (authenticated)
     """
-    queryset = Property.objects.all()
     serializer_class = PropertySerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
-    # Add filter backends
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = PropertyFilter
-    search_fields = ['title', 'description', 'address', 'city']
-    ordering_fields = ['price_per_month', 'created_at', 'rating']
-    ordering = ['-created_at']  # Default ordering
+    search_fields = ['title', 'description', 'city', 'country']
+    ordering_fields = ['price_per_month', 'created_at', 'bedrooms']
+    ordering = ['-created_at']
+
+    def get_queryset(self):
+        return Property.objects.all()
+
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
 
 class PropertyDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
-    Get single property
-    Update property (owner only)
-    Delete property (owner only)
+    Get, update, or delete a property (owner only)
     """
     queryset = Property.objects.all()
     serializer_class = PropertySerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
-    def perform_update(self, serializer):
-        if serializer.instance.owner != self.request.user:
-            raise permissions.PermissionDenied("You can only update your own properties")
-        serializer.save()
+    def get_object(self):
+        obj = super().get_object()
+        if self.request.method in ['PUT', 'PATCH', 'DELETE']:
+            if obj.owner != self.request.user:
+                raise permissions.PermissionDenied("You can only edit your own properties")
+        return obj
 
     def perform_destroy(self, instance):
         if instance.owner != self.request.user:
@@ -48,10 +51,95 @@ class PropertyDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class MyPropertiesView(generics.ListAPIView):
     """
-    Get current user's properties (authenticated)
+    Get all properties owned by current user (authenticated)
     """
     serializer_class = PropertySerializer
     permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_class = PropertyFilter
+    search_fields = ['title', 'description', 'city']
+    ordering_fields = ['price_per_month', 'created_at']
+    ordering = ['-created_at']
 
     def get_queryset(self):
         return Property.objects.filter(owner=self.request.user)
+
+
+class ReviewListCreateView(generics.ListCreateAPIView):
+    """
+    List all reviews for a property
+    Create a new review (authenticated)
+    """
+    serializer_class = ReviewSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['title', 'comment', 'reviewer__username']
+    ordering_fields = ['rating', 'created_at', 'helpful_count']
+    ordering = ['-created_at']
+
+    def get_queryset(self):
+        property_id = self.kwargs.get('property_id')
+        return Review.objects.filter(property_id=property_id)
+
+    def get_serializer_class(self):
+        if self.request.method == 'POST':
+            return ReviewCreateSerializer
+        return ReviewSerializer
+
+    def perform_create(self, serializer):
+        property_id = self.kwargs.get('property_id')
+        property_obj = Property.objects.get(id=property_id)
+        serializer.save(property=property_obj, reviewer=self.request.user)
+
+
+class ReviewDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    Get, update, or delete a review (reviewer only)
+    """
+    queryset = Review.objects.all()
+    serializer_class = ReviewSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        obj = super().get_object()
+        if obj.reviewer != self.request.user:
+            raise permissions.PermissionDenied("You can only edit your own reviews")
+        return obj
+
+    def perform_destroy(self, instance):
+        if instance.reviewer != self.request.user:
+            raise permissions.PermissionDenied("You can only delete your own reviews")
+        instance.delete()
+
+
+class PropertyRatingView(generics.RetrieveAPIView):
+    """
+    Get average rating for a property
+    """
+    queryset = Property.objects.all()
+    permission_classes = [permissions.AllowAny]
+
+    def retrieve(self, request, *args, **kwargs):
+        property_obj = self.get_object()
+        reviews = property_obj.reviews.all()
+
+        if reviews.exists():
+            avg_rating = reviews.aggregate(models.Avg('rating'))['rating__avg']
+            total_reviews = reviews.count()
+        else:
+            avg_rating = 0
+            total_reviews = 0
+
+        return Response({
+            'property_id': property_obj.id,
+            'property_title': property_obj.title,
+            'average_rating': round(avg_rating, 2) if avg_rating else 0,
+            'total_reviews': total_reviews,
+            'rating_distribution': {
+                '5_star': reviews.filter(rating=5).count(),
+                '4_star': reviews.filter(rating=4).count(),
+                '3_star': reviews.filter(rating=3).count(),
+                '2_star': reviews.filter(rating=2).count(),
+                '1_star': reviews.filter(rating=1).count(),
+            }
+        })

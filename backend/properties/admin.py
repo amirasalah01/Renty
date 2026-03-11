@@ -1,5 +1,6 @@
 from django.contrib import admin
 from .models import Property
+from .models import Review
 
 
 @admin.register(Property)
@@ -32,3 +33,22 @@ class PropertyAdmin(admin.ModelAdmin):
             'fields': ('created_at', 'updated_at')
         }),
     )
+
+    @admin.register(Review)
+    class ReviewAdmin(admin.ModelAdmin):
+        list_display = ['reviewer', 'property', 'rating', 'title', 'created_at']
+        search_fields = ['reviewer__username', 'property__title', 'title', 'comment']
+        list_filter = ['rating', 'created_at']
+        readonly_fields = ['created_at', 'updated_at']
+
+        fieldsets = (
+            ('Review Details', {
+                'fields': ('property', 'reviewer', 'rating', 'title', 'comment')
+            }),
+            ('Engagement', {
+                'fields': ('helpful_count',)
+            }),
+            ('Metadata', {
+                'fields': ('created_at', 'updated_at')
+            }),
+        )

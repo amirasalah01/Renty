@@ -1,17 +1,60 @@
 from rest_framework import serializers
-from .models import Property
+from .models import Property, Review
 from users.serializers import UserSerializer
 
 
 class PropertySerializer(serializers.ModelSerializer):
+    """Serializer for properties"""
     owner = UserSerializer(read_only=True)
+    average_rating = serializers.SerializerMethodField()
+    review_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Property
         fields = [
-            'id', 'title', 'description', 'address', 'city', 'country',
+            'id', 'owner', 'title', 'description', 'address', 'city', 'country',
             'bedrooms', 'bathrooms', 'square_feet', 'property_type',
             'price_per_month', 'available_from', 'is_available',
-            'main_image', 'owner', 'created_at', 'updated_at', 'rating'
+            'average_rating', 'review_count', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'owner', 'created_at', 'updated_at']
+
+    def get_average_rating(self, obj):
+        reviews = obj.reviews.all()
+        if reviews.exists():
+            from django.db.models import Avg
+            avg = reviews.aggregate(Avg('rating'))['rating__avg']
+            return round(avg, 2) if avg else 0
+        return 0
+
+    def get_review_count(self, obj):
+        return obj.reviews.count()
+
+
+class ReviewSerializer(serializers.ModelSerializer):
+    """Serializer for reviews"""
+    reviewer = UserSerializer(read_only=True)
+    property_title = serializers.CharField(
+        source='property.title',
+        read_only=True
+    )
+
+    class Meta:
+        model = Review
+        fields = [
+            'id', 'property', 'property_title', 'reviewer', 'rating',
+            'title', 'comment', 'helpful_count', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'reviewer', 'helpful_count', 'created_at', 'updated_at']
+
+
+class ReviewCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating reviews"""
+
+    class Meta:
+        model = Review
+        fields = ['property', 'rating', 'title', 'comment']
+
+    def create(self, validated_data):
+        validated_data['reviewer'] = self.context['request'].user
+        return super().create(validated_data)
