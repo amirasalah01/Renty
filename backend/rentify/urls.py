@@ -9,6 +9,7 @@ from drf_spectacular.views import (
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+
 class RootView(APIView):
     """Root API endpoint"""
 
@@ -31,7 +32,6 @@ urlpatterns = [
     path("api/", include("users.urls")),
     path("api/properties/", include("properties.urls")),
     path("api/messages/", include("messaging.urls")),
-    # API Documentation
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path(
         "api/docs/",
