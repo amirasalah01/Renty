@@ -1,13 +1,20 @@
-on :
+name: Django CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
 jobs:
   test:
     runs-on: ubuntu-latest
 
     env:
-      GITHUB_ACTIONS: true
-      TESTING: true
+      GITHUB_ACTIONS: "true"
+      TESTING: "true"
       SECRET_KEY: test-secret-key
-      DEBUG: False
+      DEBUG: "False"
 
     steps:
       - name: Checkout code
@@ -16,7 +23,7 @@ jobs:
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Install dependencies
         working-directory: ./backend
@@ -29,6 +36,6 @@ jobs:
         working-directory: ./backend
         run: python manage.py migrate
 
-      - name: Run tests with pytest
+      - name: Run tests
         working-directory: ./backend
         run: pytest -v --cov=. --cov-report=xml
